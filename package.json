@@ -1,6 +1,6 @@
 {
   "name": "@gsashish/pulse-events",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Production-grade typed EventEmitter with wildcards, async handlers, replay, AbortSignal support, and full TypeScript event map inference",
   "type": "module",
   "license": "MIT",
@@ -59,7 +59,7 @@
     "node": ">=18"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org",
     "access": "public"
   }
 }
