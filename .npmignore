@@ -1,0 +1,30 @@
+# Source
+src/
+
+# Tests
+tests/
+
+# Build config
+tsup.config.ts
+vitest.config.ts
+tsconfig.json
+
+# Dev
+node_modules/
+coverage/
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CI
+.github/
+
+# Env
+.env
+.env.*
