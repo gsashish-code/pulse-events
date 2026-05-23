@@ -14,9 +14,9 @@ function patternToRegExp(pattern: string): RegExp {
             continue;
         }
 
-        // wild card ("*")
+        // wild card ("*") — single segment, does not cross ":" or "."
         if (char === "*") {
-            regex += "[^\\s]+";
+            regex += "[^:.\\s]+";
             trackIndex += 1;
             continue;
         }

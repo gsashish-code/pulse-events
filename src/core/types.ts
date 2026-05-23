@@ -66,7 +66,7 @@ interface ReplayOptions {
      *
      * Example:
      * limit: 10
-     * → replays the 10 most recent events
+     * -> replays the 10 most recent events
      */
     limit?: number
 }

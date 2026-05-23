@@ -2,9 +2,9 @@
 
 Production-grade typed EventEmitter for browser and Node.js.
 
-- Full TypeScript event map inference — no manual types needed
+- Full TypeScript event map inference - no manual types needed
 - Wildcard event matching (`user:*`, `*.error`, `**`)
-- Async-first — all handlers run in parallel via `Promise.all`
+- Async-first - all handlers run in parallel; all are awaited before `emit`/`emitAll` settles, then the first handler error (if any) is re-thrown
 - `next()` — promise that resolves on the next emit
 - AbortSignal lifecycle — auto-cleanup listeners
 - Event replay and history

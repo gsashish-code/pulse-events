@@ -12,6 +12,26 @@ function makeEmitter() {
   return createEmitter<AppEvents>()
 }
 
+describe('historyLimit', () => {
+  it('historyLimit: 0 stores no history', async () => {
+    const emitter = createEmitter<AppEvents>({ historyLimit: 0 })
+    await emitter.emit('data:loaded', { count: 1 })
+    await emitter.emit('data:loaded', { count: 2 })
+    expect(emitter.history()).toHaveLength(0)
+  })
+
+  it('historyLimit: N keeps only the latest N entries', async () => {
+    const emitter = createEmitter<AppEvents>({ historyLimit: 2 })
+    await emitter.emit('data:loaded', { count: 1 })
+    await emitter.emit('data:loaded', { count: 2 })
+    await emitter.emit('data:loaded', { count: 3 })
+    expect(emitter.history()).toHaveLength(2)
+    expect(
+      emitter.history('data:loaded').map(e => (e.payload as { count: number }).count)
+    ).toEqual([2, 3])
+  })
+})
+
 describe('history()', () => {
   it('stores emitted payloads', async () => {
     const emitter = makeEmitter()
@@ -86,6 +106,16 @@ describe('replay()', () => {
     emitter.on('data:loaded', p => { received.push(p.count) })
     await emitter.replay('data:loaded', { limit: 2 })
     expect(received).toEqual([2, 3])
+  })
+
+  it('fresh emissions from handlers during replay are recorded in history', async () => {
+    const emitter = createEmitter<AppEvents>()
+    await emitter.emit('data:loaded', { count: 1 })
+    emitter.on('data:loaded', async () => {
+      await emitter.emit('user:logout', { userId: 'side-effect' })
+    })
+    await emitter.replay('data:loaded')
+    expect(emitter.history('user:logout')).toHaveLength(1)
   })
 
   it('replayed events do not get stored in history again', async () => {

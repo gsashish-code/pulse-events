@@ -41,7 +41,6 @@ export function createEmitter<
      * Stores emitted events in order.
      */
     const historyStore: HistoryEntry[] = []
-    let isReplaying = false
 
     function on<K extends keyof T & string>(event: K, handler: Handler<T[K]>, options?: ListenerOptions): () => void
     function on(event: string, handler: WildcardHandler, options?: ListenerOptions): () => void
@@ -231,15 +230,13 @@ export function createEmitter<
     ): Promise<void> {
 
         // Record history regardless of whether there are listeners
-        if (!isReplaying) {
-            historyStore.push({
-                event,
-                payload,
-                timestamp: Date.now()
-            })
-            if (historyLimit && historyStore.length > historyLimit) {
-                historyStore.shift()
-            }
+        historyStore.push({
+            event,
+            payload,
+            timestamp: Date.now()
+        })
+        if (historyLimit !== undefined && historyStore.length > historyLimit) {
+            historyStore.shift()
         }
 
         const entries = listeners.get(event)
@@ -251,22 +248,19 @@ export function createEmitter<
         const snapshot = [...entries]
 
         const tasks = snapshot.map(entry => {
-            // Remove once listeners immediately
-            if (entry.once) {
-                entries.delete(entry)
-            }
-            // Use .then() so synchronous throws are also caught
+            if (entry.once) entries.delete(entry)
             return Promise.resolve()
                 .then(() => (entry.handler as Handler<unknown>)(payload))
-                .catch(() => {})
         })
 
-        await Promise.all(tasks)
+        const results = await Promise.allSettled(tasks)
 
-        // Cleanup empty sets
-        if (entries.size === 0) {
-            listeners.delete(event)
-        }
+        if (entries.size === 0) listeners.delete(event)
+
+        const firstRejection = results.find(
+            (r): r is PromiseRejectedResult => r.status === 'rejected'
+        )
+        if (firstRejection) throw firstRejection.reason
     }
 
     /**
@@ -311,126 +305,81 @@ export function createEmitter<
     }
 
     /**
-  * Emit exact listeners + matching wildcard listeners.
-  */
-    async function emitAll<
+     * Internal dispatcher shared by emitAll (public) and replay (private).
+     * recordHistory=false lets replay re-fire events without polluting history,
+     * while still allowing handler-triggered emits to be recorded normally.
+     */
+    async function _dispatchAll<
         K extends keyof T & string
     >(
         event: K,
-        payload: T[K]
+        payload: T[K],
+        recordHistory: boolean
     ): Promise<void> {
 
-        // Record history before handlers run, consistent with emit()
-        if (!isReplaying) {
+        if (recordHistory) {
             historyStore.push({
                 event,
                 payload,
                 timestamp: Date.now()
             })
-            if (historyLimit && historyStore.length > historyLimit) {
+            if (historyLimit !== undefined && historyStore.length > historyLimit) {
                 historyStore.shift()
             }
         }
 
         const tasks: Promise<void>[] = []
 
-        /**
-         * ---------------------------------------------------
-         * Exact listeners
-         * ---------------------------------------------------
-         */
-
-        const exactEntries =
-            listeners.get(event)
-
+        const exactEntries = listeners.get(event)
         if (exactEntries) {
-
-            // Snapshot before iteration
             const snapshot = [...exactEntries]
-
             for (const entry of snapshot) {
-
-                // Remove once listeners immediately
-                if (entry.once) {
-                    exactEntries.delete(entry)
-                }
-
-                const task = Promise.resolve()
-                    .then(() => (entry.handler as Handler<unknown>)(payload))
-                    .catch(() => {})
-
-                tasks.push(task)
+                if (entry.once) exactEntries.delete(entry)
+                tasks.push(
+                    Promise.resolve()
+                        .then(() => (entry.handler as Handler<unknown>)(payload))
+                )
             }
-
-            // Cleanup empty set
-            if (exactEntries.size === 0) {
-                listeners.delete(event)
-            }
+            if (exactEntries.size === 0) listeners.delete(event)
         }
 
-        /**
-         * ---------------------------------------------------
-         * Wildcard listeners
-         * ---------------------------------------------------
-         */
-
-        // Snapshot keys before iteration
         const allKeys = [...listeners.keys()]
-
         for (const key of allKeys) {
+            if (key === event) continue
+            if (!isWildcardPattern(key)) continue
+            if (!matchesPattern(key, event)) continue
 
-            // Skip exact key
-            if (key === event) {
-                continue
-            }
+            const wildcardEntries = listeners.get(key)
+            if (!wildcardEntries) continue
 
-            // Skip non-wildcards
-            if (!isWildcardPattern(key)) {
-                continue
-            }
-
-            // Skip non-matching patterns
-            if (!matchesPattern(key, event)) {
-                continue
-            }
-
-            const wildcardEntries =
-                listeners.get(key)
-
-            if (!wildcardEntries) {
-                continue
-            }
-
-            // Snapshot before iteration
             const snapshot = [...wildcardEntries]
-
             for (const entry of snapshot) {
-
-                // Remove once listeners immediately
-                if (entry.once) {
-                    wildcardEntries.delete(entry)
-                }
-
-                const task = Promise.resolve()
-                    .then(() => (entry.handler as WildcardHandler)(payload, event))
-                    .catch(() => {})
-
-                tasks.push(task)
+                if (entry.once) wildcardEntries.delete(entry)
+                tasks.push(
+                    Promise.resolve()
+                        .then(() => (entry.handler as WildcardHandler)(payload, event))
+                )
             }
-
-            // Cleanup empty set
-            if (wildcardEntries.size === 0) {
-                listeners.delete(key)
-            }
+            if (wildcardEntries.size === 0) listeners.delete(key)
         }
 
-        /**
-         * ---------------------------------------------------
-         * Run everything in parallel
-         * ---------------------------------------------------
-         */
+        const results = await Promise.allSettled(tasks)
+        const firstRejection = results.find(
+            (r): r is PromiseRejectedResult => r.status === 'rejected'
+        )
+        if (firstRejection) throw firstRejection.reason
+    }
 
-        await Promise.all(tasks)
+    /**
+     * Emit exact listeners + matching wildcard listeners.
+     */
+    async function emitAll<
+        K extends keyof T & string
+    >(
+        event: K,
+        payload: T[K]
+    ): Promise<void> {
+        return _dispatchAll(event, payload, true)
     }
 
     /**
@@ -489,20 +438,16 @@ export function createEmitter<
             if (options?.limit !== undefined) {
                 entries = entries.slice(-options.limit)
             }
-            isReplaying = true
-            try {
-                for (const entry of entries) {
-                    try {
-                        await emitAll(
-                            entry.event as K,
-                            entry.payload as T[K]
-                        )
-                    } catch {
-                        // failed replay entry must not stop the rest
-                    }
+            for (const entry of entries) {
+                try {
+                    await _dispatchAll(
+                        entry.event as K,
+                        entry.payload as T[K],
+                        false
+                    )
+                } catch {
+                    // failed replay entry must not stop the rest
                 }
-            } finally {
-                isReplaying = false
             }
         },
 
@@ -510,20 +455,16 @@ export function createEmitter<
             const entries = historyStore.filter(
                 e => e.timestamp >= timestamp
             )
-            isReplaying = true
-            try {
-                for (const entry of entries) {
-                    try {
-                        await emitAll(
-                            entry.event as keyof T & string,
-                            entry.payload as T[keyof T & string]
-                        )
-                    } catch {
-                        // failed replay entry must not stop the rest
-                    }
+            for (const entry of entries) {
+                try {
+                    await _dispatchAll(
+                        entry.event as keyof T & string,
+                        entry.payload as T[keyof T & string],
+                        false
+                    )
+                } catch {
+                    // failed replay entry must not stop the rest
                 }
-            } finally {
-                isReplaying = false
             }
         },
 

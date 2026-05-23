@@ -10,20 +10,20 @@ type AppEvents = {
 }
 
 describe('patternToRegExp', () => {
-  it('converts "user:*" to ^user:[^\\s]+$', () => {
-    expect(patternToRegExp('user:*').source).toBe('^user:[^\\s]+$')
+  it('converts "user:*" to ^user:[^:.\\s]+$', () => {
+    expect(patternToRegExp('user:*').source).toBe('^user:[^:.\\s]+$')
   })
 
-  it('converts "*.error" to ^[^\\s]+\\.error$', () => {
-    expect(patternToRegExp('*.error').source).toBe('^[^\\s]+\\.error$')
+  it('converts "*.error" to ^[^:.\\s]+\\.error$', () => {
+    expect(patternToRegExp('*.error').source).toBe('^[^:.\\s]+\\.error$')
   })
 
-  it('converts "*" to ^[^\\s]+$', () => {
-    expect(patternToRegExp('*').source).toBe('^[^\\s]+$')
+  it('converts "*" to ^[^:.\\s]+$', () => {
+    expect(patternToRegExp('*').source).toBe('^[^:.\\s]+$')
   })
 
-  it('converts "a:*:b" to ^a:[^\\s]+:b$', () => {
-    expect(patternToRegExp('a:*:b').source).toBe('^a:[^\\s]+:b$')
+  it('converts "a:*:b" to ^a:[^:.\\s]+:b$', () => {
+    expect(patternToRegExp('a:*:b').source).toBe('^a:[^:.\\s]+:b$')
   })
 
   it('converts "user:**" to ^user:.+$', () => {
@@ -71,6 +71,10 @@ describe('matchesPattern', () => {
       expect(matchesPattern('*.error', '.error')).toBe(false)
     })
 
+    it('"*.error" does not match "db.net.error" (crosses dot separator)', () => {
+      expect(matchesPattern('*.error', 'db.net.error')).toBe(false)
+    })
+
     it('"*" matches any single non-whitespace token', () => {
       expect(matchesPattern('*', 'anything')).toBe(true)
     })
@@ -85,6 +89,14 @@ describe('matchesPattern', () => {
 
     it('"a:*:b" does not match "a::b" (empty middle segment)', () => {
       expect(matchesPattern('a:*:b', 'a::b')).toBe(false)
+    })
+
+    it('"user:*" does not match "user:login:extra" (crosses separator)', () => {
+      expect(matchesPattern('user:*', 'user:login:extra')).toBe(false)
+    })
+
+    it('"a:*:b" does not match "a:x:y:b" (crosses separator)', () => {
+      expect(matchesPattern('a:*:b', 'a:x:y:b')).toBe(false)
     })
   })
 
@@ -126,10 +138,10 @@ describe('emitAll() wildcard dispatch', () => {
     expect(received).not.toContain('data:loaded')
   })
 
-  it('"*" wildcard matches everything', async () => {
+  it('"**" wildcard matches everything', async () => {
     const emitter = createEmitter<AppEvents>()
     const received: string[] = []
-    emitter.on('*', (_payload, eventName) => { received.push(eventName) })
+    emitter.on('**', (_payload, eventName) => { received.push(eventName) })
     await emitter.emitAll('user:login', { userId: 'u1', timestamp: 1 })
     await emitter.emitAll('data:loaded', { count: 5 })
     expect(received).toContain('user:login')

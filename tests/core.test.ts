@@ -109,14 +109,15 @@ describe('emit()', () => {
     expect(Math.abs(starts[1]! - starts[0]!)).toBeLessThan(20)
   })
 
-  it('handler throwing does not stop other handlers', async () => {
+  it('handler throwing rejects emit but all other handlers still run', async () => {
     const emitter = makeEmitter()
     const calls: number[] = []
     emitter.on('data:loaded', () => { throw new Error('boom') })
     emitter.on('data:loaded', () => { calls.push(1) })
     await expect(
       emitter.emit('data:loaded', { count: 0 })
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow('boom')
+    // Promise.allSettled ensures the second handler completed before the throw
     expect(calls).toContain(1)
   })
 })
